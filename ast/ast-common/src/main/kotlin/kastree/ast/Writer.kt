@@ -47,7 +47,7 @@ open class Writer(
                     childrenLines(decls, extraMidLines = 1)
                 }
                 is Node.Package ->
-                    childMods().append("package ").appendNames(names, ".")
+                    childMods().append("package ").appendNames(names, ".").append('\n')
                 is Node.Import -> {
                     append("import ").appendNames(names, ".")
                     if (wildcard) append(".*") else if (alias != null) append(" as ").appendName(alias)
@@ -100,8 +100,12 @@ open class Writer(
                     if (by != null) append(" by ").also { children(by) }
                 }
                 is Node.Decl.Structured.PrimaryConstructor -> {
-                    if (mods.isNotEmpty()) append(" ").also { childMods(newlines = false).append("constructor") }
-                    parenChildren(params)
+                    if (mods.isNotEmpty()) lineEnd().lineBegin().also { childMods(newlines = true).append("constructor") }
+                    if(params.size >= 2) {
+                        parenChildrenWithNewLine(params)
+                    }else {
+                        parenChildren(params)
+                    }
                 }
                 is Node.Decl.Init ->
                     append("init ").also { children(block) }
@@ -112,7 +116,11 @@ open class Writer(
                     if (receiverType != null) children(receiverType).append(".")
                     name?.also { appendName(it) }
                     bracketedChildren(paramTypeParams)
-                    parenChildren(params)
+                    if(params.size >= 2) {
+                        parenChildrenWithNewLine(params)
+                    }else {
+                        parenChildren(params)
+                    }
                     if (type != null) append(": ").also { children(type) }
                     childTypeConstraints(typeConstraints)
                     if (body != null) append(' ').also { children(body) }
@@ -126,8 +134,13 @@ open class Writer(
                 }
                 is Node.Decl.Func.Body.Block ->
                     children(block)
-                is Node.Decl.Func.Body.Expr ->
-                    append("= ").also { children(expr) }
+                is Node.Decl.Func.Body.Expr ->{
+                    lineEnd("=").indented{
+                        indented{
+                            lineBegin().also { children(expr) }
+                        }
+                    }
+                }
                 is Node.Decl.Property -> {
                     childMods().append(if (readOnly) "val " else "var ")
                     bracketedChildren(typeParams, " ")
@@ -253,7 +266,27 @@ open class Writer(
                         it == Node.Expr.BinaryOp.Token.RANGE || it == Node.Expr.BinaryOp.Token.DOT ||
                             it == Node.Expr.BinaryOp.Token.DOT_SAFE
                     }
-                    children(listOf(lhs, oper, rhs), if (noSep) "" else " ")
+                    if(oper is Node.Expr.BinaryOp.Oper.Token && oper.token == Node.Expr.BinaryOp.Token.DOT && rhs is Node.Expr.Call && (lhs is Node.Expr.Call || lhs is Node.Expr.BinaryOp)) {
+                        var stringIndent = "\n"
+                        if(parent !is Node.Expr.BinaryOp) {
+                            indented {
+                                indented {
+                                    for (i in 1..indent.length) {
+                                        stringIndent += " "
+                                    }
+                                    children(listOf(lhs, Node.Expr.StringTmpl.Elem.Regular(stringIndent), oper, rhs), if (noSep) "" else " ")
+                                }
+                            }
+                        }else {
+                            for (i in 1..indent.length) {
+                                stringIndent += " "
+                            }
+                            children(listOf(lhs, Node.Expr.StringTmpl.Elem.Regular(stringIndent), oper, rhs), if (noSep) "" else " ")
+                        }
+
+                    }else {
+                        children(listOf(lhs, oper, rhs), if (noSep) "" else " ")
+                    }
                 }
                 is Node.Expr.BinaryOp.Oper.Infix ->
                     append(str)
@@ -373,7 +406,13 @@ open class Writer(
                 is Node.Expr.Call -> {
                     children(expr)
                     bracketedChildren(typeArgs)
-                    if (args.isNotEmpty() || lambda == null) parenChildren(args)
+                    if (args.isNotEmpty() || lambda == null) {
+                        if(args.size >= 2) {
+                            parenChildrenWithNewLine(args)
+                        }else {
+                            parenChildren(args)
+                        }
+                    }
                     if (lambda != null) append(' ').also { children(lambda) }
                 }
                 is Node.Expr.Call.TrailLambda -> {
@@ -453,9 +492,8 @@ open class Writer(
                 }
                 is Node.Extra.Comment -> {
                     if (it.startsLine && it.endsLine) lineEnd(it.text).lineBegin() else {
-                        if (!it.startsLine) append(' ')
                         append(it.text)
-                        if (!it.endsLine) append(' ')
+                        if (!it.endsLine) append(' ') else append('\n')
                     }
                 }
             }
@@ -545,6 +583,8 @@ open class Writer(
     }
 
     protected fun Node.parenChildren(v: List<Node?>) = children(v, ", ", "(", ")")
+
+    protected fun Node.parenChildrenWithNewLine(v: List<Node?>) = children(v, ",\n        " + indent, "(\n        " + indent, "\n" + indent + ")")
 
     protected fun Node.childrenLines(v: Node?, extraMidLines: Int = 0, extraEndLines: Int = 0) =
         this@Writer.also { if (v != null) childrenLines(listOf(v), extraMidLines, extraEndLines) }
