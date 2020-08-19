@@ -453,9 +453,8 @@ open class Writer(
                 }
                 is Node.Extra.Comment -> {
                     if (it.startsLine && it.endsLine) lineEnd(it.text).lineBegin() else {
-                        if (!it.startsLine) append(' ')
                         append(it.text)
-                        if (!it.endsLine) append(' ')
+                        if (!it.endsLine) append(' ') else append('\n')
                     }
                 }
             }
